@@ -21,20 +21,17 @@
                     - [WordpieceTokenizer](#wordpiecetokenizer)
                     - [流程图](#%E6%B5%81%E7%A8%8B%E5%9B%BE)
                 - [encode](#encode)
+                    - [encode_plus](#encode_plus)
+            - [主要方法使用示例](#%E4%B8%BB%E8%A6%81%E6%96%B9%E6%B3%95%E4%BD%BF%E7%94%A8%E7%A4%BA%E4%BE%8B)
 
 <!-- /TOC -->
 
 ## huggingface transformers
+> 中文文档在此：[transformers_zh](https://huggingface.co/docs/transformers/v4.51.3/zh/index)
 以下是该库的简要的发展历程：
 1. 最初阶段 (`2018`年) ：`Hugging Face` 发布了 `pytorch-pretrained-bert` 库，专注于提供 `PyTorch` 实现的 `BERT` 预训练模型。
 2. 扩展阶段 (`2019`年) ：随着更多 `Transformer` 模型（如 `GPT-2`、`XLNet` 等）的加入，库更名为 `pytorch-transformers` ，但仍然主要支持 `PyTorch`。
 3. 多框架支持 (`2019`年底) ：为了支持 `TensorFlow` 和其他框架，库最终更名为 `transformers` ，成为我们现在所知的跨框架 `Transformer` 模型库。
-
-
-
-
-
-
 
 ## 源码解读
 本节，我们分析一下`transformers`中`bert`的源码。
@@ -149,10 +146,13 @@ tokenizer.save(str(tokenizer_path))
 
 
 ### BertTokenizer
-> 和`BERT`有关的`Tokenizer`主要写在`src/transformers/models/bert/tokenization_bert.py`和`src/transformers/models/bert/tokenization_bert_fast.py` 中。这两份代码分别对应基本的`BertTokenizer`，以及`BertTokenizerFast`。前者使用纯`python`实现，后者基于`Rust`语言开发，性能提高十倍，这里主要讲解前者。
+> 和`BERT`有关的`Tokenizer`主要写在`src/transformers/models/bert/tokenization_bert.py`和`src/transformers/models/bert/tokenization_bert_fast.py` 中。<font color='red'>其实大部分模型的`tokenization`都含有这两个版本，这两份代码分别对应基本的`BertTokenizer`，以及`BertTokenizerFast`。</font>前者使用纯`python`实现，后者基于`Rust`语言开发，性能提高十倍，这里主要讲解前者。
 
 其类说明如下：
-> `PreTrainedTokenizer` 集成自 `PreTrainedTokenizer`，父类包含了大多数主要方法，用户应该参考这个超类来了解更多关于这些方法的信息。
+> `BertTokenizer` 继承自父类 `PreTrainedTokenizer`，父类`PreTrainedTokenizer`往上继承自`PreTrainedTokenizerBase`。<font color='red'>父类`PreTrainedTokenizer`包含了所有`tokenizers`的主要方法</font>，用户应该参考这个超类来了解更多关于这些方法的信息，例如：
+* 分词（将字符串拆分为子词标记字符串），将`tokens`字符串转换为`id`并转换回来，以及编码/解码（即标记化并转换为整数）。
+* 以独立于底层结构（`BPE`、`SentencePiece`……）的方式向词汇表中添加新`tokens`。
+* 管理特殊`tokens`（如`mask`、句首等）：添加它们，将它们分配给`tokenizer`中的属性以便于访问，并确保它们在标记过程中不会被分割。
 ```py
 class BertTokenizer(PreTrainedTokenizer):
     r"""
@@ -195,9 +195,9 @@ class BertTokenizer(PreTrainedTokenizer):
     * `decode`：可以将`encode`方法的输出变回为完整句子。<br><br>
     * `save_vocabulary`：保存分词器的词表。<br><br>
 2. 然后是一些特殊方法：<br><br>
-    * `build_inputs_with_special_tokens`：<font color='red'>可以将一个句子或者一对句子构建为 `Bert` 模型所需要的输入形式：`“[CLS], x, [SEP]”` 或者 `“[CLS], x1, [SEP], x2, [SEP]”`</font>；<br><br>
-    * `get_special_tokens_mask`：生成一个二进制掩码列表，标识输入序列中的 ​特殊标记​（1）和 ​普通文本标记​（0）。<font color='red'>该函数接受的是两个 `token_ids`列表（应该接收的是 `encode` 函数的输出</font>例如，输入一个句子 `[CLS] Hello world [SEP]` 对应的掩码为 `[1, 0, 0, 1]`;输入两个句子 `[CLS] Hello world [SEP] I love NLP [SEP]` 对应的掩码为 `[1, 0, 0, 1, 0, 0, 1]`；<br><br>
-    * `create_token_type_ids_from_sequences`：生成一个与输入序列长度相同的列表，标识每个 token 属于哪个句子：`0` 表示属于第一个句子（包括 `[CLS]` 和第一个 `[SEP]`）；`1` 表示属于第二个句子（包括第二个 `[SEP]`）。<font color='red'>这也是 `Bert` 模型需要的，`Bert` 将在模型的输入中嵌入 `token`所属的句子信息。</font>例如，输入 `[CLS] 句子A [SEP] 句子B [SEP]` 会生成 `token type IDs [0, 0, ..., 0, 1, ..., 1]`。<br><br>
+    * <font id='build_inputs_with_special_tokens'>`build_inputs_with_special_tokens(self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None)`</font>：<font color='red'>可以将一个句子或者一对句子构建为 `Bert` 模型所需要的输入形式：`“[CLS], x, [SEP]”` 或者 `“[CLS], x1, [SEP], x2, [SEP]”`</font>；<br><br>
+    * <font id='get_special_tokens_mask'>`get_special_tokens_mask(self,token_ids_0,token_ids_1,already_has_special_tokens)`</font>：生成一个二进制掩码列表，标识输入序列中的 ​特殊标记​（1）和 ​普通文本标记​（0）。<font color='red'>该函数接受的是两个 `token_ids`列表（应该接收的是 `encode` 函数的输出</font>例如，输入一个句子 `[CLS] Hello world [SEP]` 对应的掩码为 `[1, 0, 0, 1]`;输入两个句子 `[CLS] Hello world [SEP] I love NLP [SEP]` 对应的掩码为 `[1, 0, 0, 1, 0, 0, 1]`；<br><br>
+    * <font id='create_token_type_ids_from_sequences'>`create_token_type_ids_from_sequences(self,token_ids_0,token_ids_1)`</font>：生成一个与输入序列长度相同的列表，标识每个 token 属于哪个句子：`0` 表示属于第一个句子（包括 `[CLS]` 和第一个 `[SEP]`）；`1` 表示属于第二个句子（包括第二个 `[SEP]`）。<font color='red'>这也是 `Bert` 模型需要的，`Bert` 将在模型的输入中嵌入 `token`所属的句子信息。</font>例如，输入 `[CLS] 句子A [SEP] 句子B [SEP]` 会生成 `token type IDs [0, 0, ..., 0, 1, ..., 1]`。<br><br>
 
 
 ##### tokenize
@@ -475,7 +475,208 @@ class WordpieceTokenizer:
 
 ###### 流程图
 ![](./images/BertTokenizer.png)
+
 ##### encode
-    
+> `tokenizer.encode()` 该方法位于基类`PreTrainedTokenizerBase`中，返回词`id`列表, 默认参数`add_special_tokens: bool = True,`表示首尾加 `[CLS]`, `[SEP]`对应的词`id`，我们来看看其源码：
+```py
+def encode(
+    self,
+    text: Union[TextInput, PreTokenizedInput, EncodedInput],
+    text_pair: Optional[Union[TextInput, PreTokenizedInput, EncodedInput]] = None,
+    add_special_tokens: bool = True,
+    padding: Union[bool, str, PaddingStrategy] = False,
+    truncation: Union[bool, str, TruncationStrategy, None] = None,
+    max_length: Optional[int] = None,
+    stride: int = 0,
+    padding_side: Optional[str] = None,
+    return_tensors: Optional[Union[str, TensorType]] = None,
+    **kwargs,
+) -> List[int]:
+    encoded_inputs = self.encode_plus(
+        text,
+        text_pair=text_pair,
+        add_special_tokens=add_special_tokens,
+        padding=padding,
+        truncation=truncation,
+        max_length=max_length,
+        stride=stride,
+        padding_side=padding_side,
+        return_tensors=return_tensors,
+        **kwargs,
+    )
+
+    return encoded_inputs["input_ids"]
+```
+我们可以看到，`encode` 方法调用了 `encode_plus` 方法，`encode_plus`返回一个字典，其中包含 `input_ids` 键对应的值，即词`id`列表。
+
+###### encode_plus
+实际上`encode_plus` 方法返回一个字典，其中除了包含包含 `input_ids` 之外，另外还包含其他键值对，如 `token_type_ids`、`attention_mask` 等。这里我们就不讲`encode_plus`的源码了，因为函数嵌套的非常复杂，主要介绍一下该函数的参数和返回值等：
+> 详情参考官方文档：[encode_plus](https://huggingface.co/docs/transformers/v4.51.3/zh/internal/tokenization_utils#transformers.PreTrainedTokenizerBase.encode_plus)
+⚠️ 注意：`encode_plus` 方法已被弃用，建议使用 `__call__` 方法替代（例如 `tokenizer(text, ​**kwargs)`, 该实例方法的功能和 `encode_plus`相同）。
+
+参数列表如下：
+1. 输入参数：
+    1. `text`
+        - 类型：`str`, `List[str]`, `List[int]`
+        - 默认值：必填
+        - 说明：
+            要编码的第一个文本，可以是：
+            - 原始字符串（如 `"Hello world"`）
+            - 已分词的字符串列表（如 `["Hello", "world"]`）
+            - 已转换为 `ID` 的整数列表（仅限非快速分词器）
+    2. `text_pair`
+        - 类型：`Optional[str]`, `Optional[List[str]]`, `Optional[List[int]]`
+        - 默认值：`None`
+        - 说明：可选的第二个文本（如问答对的答案），格式与 `text` 相同。
+2. 输入处理参数：
+    1. `add_special_tokens`
+    - 类型：`bool`
+    - 默认值：`True`
+    - 说明：是否在编码的开头和结尾添加特殊标记。如 `BERT` 的 `[CLS]`（分类标记）、`[SEP]`（分隔符），`GPT` 的 `<|endoftext|>`，T5 的 `</s>` 等。多数模型（如 `BERT、RoBERTa`）默认启用（`True`），因为它们的输入需要特殊标记来标识序列结构。
+    <font color='red'>当 `add_special_tokens=True` 时，实际调用的是分词器内部的 `build_inputs_with_special_tokens()` 方法</font>。<br>
+    我们之前在 `BertTokenizer` 类中对其进行了[重写](#build_inputs_with_special_tokens)，因此会调用子类的 `build_inputs_with_special_tokens()` 方法，<font color='red'>该方法会指定哪些字符会被自动地加入到模型的输入 `ids`中</font>。这里我们展示以下具体代码：
+        ```py
+        def build_inputs_with_special_tokens(
+            self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
+        ) -> List[int]:
+            if token_ids_1 is None:
+                return [self.cls_token_id] + token_ids_0 + [self.sep_token_id]
+            cls = [self.cls_token_id]
+            sep = [self.sep_token_id]
+            return cls + token_ids_0 + sep + token_ids_1 + sep
+        ```
+    2. `padding`
+        - 类型：`bool` 或 `str` 或 `PaddingStrategy`
+        - 默认值：`False`
+        - 说明：
+            - `False`：不填充（默认）。
+            - `True`：填充到最长序列长度。
+            - `'longest'`：填充到最长序列长度。
+    3. `truncation`
+        - 类型：`bool` 或 `str` 或 `TruncationStrategy` 或 `None`
+        - 默认值：`None`
+        - 说明：
+            - `False`/`do_not_truncate`：不截断（默认）。
+            - `True`/`longest_first`：从最长序列逐 `token` 截断至 `max_length`。
+            - `only_first`：仅截断第一个序列（`text`）
+            - `only_second`：仅截断第二个序列（`text_pair`）。
+    4. `max_length`
+        - 类型：`Optional[int]`
+        - 默认值：`None`
+        - 说明：
+            - 最大长度（`token` 数量）。若未设置，使用模型的最大输入长度（如 `BERT` 为 `512`）。
+    5. ...
+3. 输出控制参数：
+    1. `return_tensors`: 返回张量类型
+        - 类型：`Optional[str]` 或 `TensorType`
+        - 默认值：`None`
+        - 说明：
+            - `None`：返回 `List[int]`。
+            - `'pt'`：返回 `torch.Tensor`。
+            - `'tf'`：返回 `tf.Tensor`。
+            - `'np'`：返回 `numpy.ndarray`。
+            - `'jax'`：返回 `jax.numpy.ndarray`。
+    2. `return_token_type_ids`: 是否返回 `Token` 类型 `ID`（用于区分两个文本）。
+        - 类型：`bool`
+        - 默认值：`False`
+        - 说明：
+            - `False`：不返回 `Token` 类型 `ID`（默认）。
+            - `True`：返回 `Token` 类型 `ID`。当该参数为`True`时，底层实际调用了`create_token_type_ids_from_sequences`方法，我们在 `BertTokenizer` 类中对其进行了[重写](#create_token_type_ids_from_sequences)，因此会调用子类的 `create_token_type_ids_from_sequences()` 方法，<font color='red'>该方法会为每个 `Token` 构建类型 `ID`</font>。这里我们展示以下具体代码：
+                ```py
+                    def create_token_type_ids_from_sequences(
+                    self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
+                ) -> List[int]:
+                    sep = [self.sep_token_id]
+                    cls = [self.cls_token_id]
+                    if token_ids_1 is None:
+                        return len(cls + token_ids_0 + sep) * [0]
+                    return len(cls + token_ids_0 + sep) * [0] + len(token_ids_1 + sep) * [1]
+                    ```
+    3. `return_attention_mask`: 是否返回注意力掩码。
+        - 类型：`bool`
+        - 默认值：`False`
+        - 说明：
+            - `False`：不返回注意力掩码（默认）。
+            - `True`：返回注意力掩码。
+    4. `return_overflowing_tokens`: 是否返回溢出的 `Token`。
+        - 类型：`bool`
+        - 默认值：`False`
+        - 说明：
+            - `False`：不返回溢出的 `Token`（默认）。
+            - `True`：返回溢出的 `Token`。
+    5. `return_special_tokens_mask`: 是否返回特殊标记掩码。
+        - 类型：`bool`
+        - 默认值：`False`
+        - 说明：
+            - `False`：不返回特殊标记掩码（默认）。
+            - `True`：返回特殊标记掩码，若设置为`True`，则实际会调用`get_special_tokens_mask`方法，我们在 `BertTokenizer` 类中对其进行了[重写](#get_special_tokens_mask)，因此会调用子类的 `get_special_tokens_mask()` 方法，<font color='red'>该方法会为特殊字符构建掩码</font>。这里我们展示以下具体代码：
+                ```py
+                def get_special_tokens_mask(
+                    self,
+                    token_ids_0: List[int],
+                    token_ids_1: Optional[List[int]] = None,
+                    already_has_special_tokens: bool = False,
+                ) -> List[int]:
+                    if already_has_special_tokens:
+                        return super().get_special_tokens_mask(
+                            token_ids_0=token_ids_0,
+                            token_ids_1=token_ids_1,
+                            already_has_special_tokens=True,
+                        )
+
+                    if token_ids_1 is not None:
+                        return [1] + ([0] * len(token_ids_0)) + [1] + ([0] * len(token_ids_1)) + [1]
+                    return [1] + ([0] * len(token_ids_0)) + [1]
+                    ```
+    6. `return_offsets_mapping`: 是否返回偏移映射。
+    7. `return_length`: 是否返回编码之后序列的长度。
+    8. `verbose`: 是否打印警告信息。
+
+---
+返回值列表如下：
+1. `input_ids`: 模型输入的 `token ID` 列表（核心数据）
+2. `token_type_ids`: 区分两个文本的 `ID` 列表（如 `0`代表第一个文本，`1` 代表第二个文本）。
+3. `attention_mask`: 标识哪些 `token` 需要被模型关注的掩码（`1=`有效 `token`，`0=`填充符）.
+4. `overflowing_tokens`: 当输入文本超出最大长度时，溢出的 `token` 列表。（需启用 `return_overflowing_tokens=True`）。
+5. `num_truncated_tokens`: 被截断的 `token` 数量（需启用 `return_overflowing_tokens=True`）。
+6. `special_tokens_mask`: 标识哪些 `token` 是特殊标记的掩码（`1` 表示特殊标记，`0` 表示普通 `token`）（需要启用 `return_special_tokens_mask=True`，`add_special_tokens=True`）
+7. `length`: 输入序列的长度（需启用 `return_length=True`）。
+
+
+#### 主要方法使用示例
+> 这一部分，我们介绍一下主要方法的使用示例：
+
+1. 输入字符串：
+    ```py
+    text = "i am overheat"
+    ```
+2. `tokeninze(text)`分词：
+    ```py
+    tokens = BertTokenizer.tokeninze(text)
+    # tokens = ['i', 'am', 'over', '##hea', '##t']
+    ```
+3. `encode(tokens, add_special_tokens=Tru)`编码：
+    > 将接受到的`tokens` 转化为 `ids`, 参数 `add_special_tokens=True` 默认为`True`，表示在 `ids`首尾添加 `[CLS]`, `[SEP]`对应的词`id`
+    ```py
+    ids = BertTokenizer.encode(tokens,add_special_tokens=True)
+    # ids = 101, 1045, 2572, 2058, 20192, 2102, 102]
+    ```
+4. `convert_ids_to_tokens(ids)`将 `ids` 列表转换为对应的 ​原始词元（`Tokens`）列表​。<br><br>
+    > 1. ​不处理子词合并​：输出的词元保留分词后的原始形式（如 `"un"`, `"##aff"`, `"##able"`）。
+    > 2. 保留特殊 `Token`​：如 `[CLS]`、`[SEP]`、`[PAD]` 等。
+
+    我们可以对 `encode` 的输出调用该函数看，发现确实是在添加了首尾 `[CLS]`, `[SEP]`对应的词`id`
+    ```py
+    tokens = BertTokenizer.convert_ids_to_tokens(ids)
+    # tokens = ['[CLS]', 'i', 'am', 'over', '##hea', '##t', '[SEP]']
+    ```
+5. `decode(ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)`将 `​Token IDs`​ 转换为 ​可读的自然语言文本。<br><br>
+    > 1. 合并子词（如将 `"un"`, `"##aff"`, `"##able"` 合并为 `"unaffable"`）。
+    > 2. 移除特殊 `Token`(`skip_special_tokens=True`)​：如 `[CLS]`、`[SEP]`、`[PAD]` 等。
+    > 3. 移除多余空格（`clean_up_tokenization_spaces=True`）。
+    ```py
+    text = BertTokenizer.decode(ids)
+    # text = 'i am overheat'
+    ```
 
 
