@@ -530,20 +530,20 @@ def encode(
         - 说明：可选的第二个文本（如问答对的答案），格式与 `text` 相同。
 2. 输入处理参数：
     1. `add_special_tokens`
-    - 类型：`bool`
-    - 默认值：`True`
-    - 说明：是否在编码的开头和结尾添加特殊标记。如 `BERT` 的 `[CLS]`（分类标记）、`[SEP]`（分隔符），`GPT` 的 `<|endoftext|>`，T5 的 `</s>` 等。多数模型（如 `BERT、RoBERTa`）默认启用（`True`），因为它们的输入需要特殊标记来标识序列结构。
-    <font color='red'>当 `add_special_tokens=True` 时，实际调用的是分词器内部的 `build_inputs_with_special_tokens()` 方法</font>。<br>
-    我们之前在 `BertTokenizer` 类中对其进行了[重写](#build_inputs_with_special_tokens)，因此会调用子类的 `build_inputs_with_special_tokens()` 方法，<font color='red'>该方法会指定哪些字符会被自动地加入到模型的输入 `ids`中</font>。这里我们展示以下具体代码：
-        ```py
-        def build_inputs_with_special_tokens(
-            self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
-        ) -> List[int]:
-            if token_ids_1 is None:
-                return [self.cls_token_id] + token_ids_0 + [self.sep_token_id]
-            cls = [self.cls_token_id]
-            sep = [self.sep_token_id]
-            return cls + token_ids_0 + sep + token_ids_1 + sep
+        - 类型：`bool`
+        - 默认值：`True`
+        - 说明：是否在编码的开头和结尾添加特殊标记。如 `BERT` 的 `[CLS]`（分类标记）、`[SEP]`（分隔符），`GPT` 的 `<|endoftext|>`，T5 的 `</s>` 等。多数模型（如 `BERT、RoBERTa`）默认启用（`True`），因为它们的输入需要特殊标记来标识序列结构。
+        <font color='red'>当 `add_special_tokens=True` 时，实际调用的是分词器内部的 `build_inputs_with_special_tokens()` 方法</font>。<br>
+        我们之前在 `BertTokenizer` 类中对其进行了[重写](#build_inputs_with_special_tokens)，因此会调用子类的 `build_inputs_with_special_tokens()` 方法，<font color='red'>该方法会指定哪些字符会被自动地加入到模型的输入 `ids`中</font>。这里我们展示以下具体代码：
+            ```py
+            def build_inputs_with_special_tokens(
+                self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
+            ) -> List[int]:
+                if token_ids_1 is None:
+                    return [self.cls_token_id] + token_ids_0 + [self.sep_token_id]
+                cls = [self.cls_token_id]
+                sep = [self.sep_token_id]
+                return cls + token_ids_0 + sep + token_ids_1 + sep
         ```
     2. `padding`
         - 类型：`bool` 或 `str` 或 `PaddingStrategy`
